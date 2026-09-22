@@ -80,6 +80,7 @@ export interface ReplayTickInput {
 }
 
 export interface ReplayPayload {
+  ticks?: number;
   id?: string;
   gameId: string;
   userId?: string | null;

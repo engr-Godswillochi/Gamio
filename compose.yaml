@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: gamio
+      POSTGRES_USER: gamio
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set a random hex DATABASE_PASSWORD in .env}
+    volumes:
+      - database:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gamio"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://gamio:${DATABASE_PASSWORD}@db:5432/gamio
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set your HTTPS public origin in .env}
+      ADMIN_USERNAMES: ${ADMIN_USERNAMES:?Set your moderator username in .env}
+      TRUST_PROXY: "1"
+    volumes:
+      - media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  edge:
+    image: caddy:2
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?Set your domain in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  database:
+  media:
+  certificates:
+  caddy_config:

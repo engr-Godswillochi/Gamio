@@ -22,7 +22,7 @@ import {
   SpawnerConfig,
   Comparator,
   GameState,
-} from '../types/gameModel';
+} from '../types/gameModel.js';
 
 export interface RuntimeEntity extends Entity {
   vx: number;
@@ -36,6 +36,7 @@ export interface RuntimeEntity extends Entity {
 }
 
 export interface LogicHostEngine {
+  schema: GameModelSchema;
   state: GameState;
   runtimeEntities: RuntimeEntity[];
   elapsedMs: number;
@@ -180,6 +181,8 @@ export class InputManager {
     return this.currentActiveInputs.has(name);
   }
 
+  public isKeyHeld(key: string): boolean { return this.prevPressedKeys.has(key); }
+
   public reset(): void {
     this.prevActiveInputs.clear();
     this.currentActiveInputs.clear();
@@ -268,7 +271,7 @@ export class SpawnerManager {
             ...state.config.entityAppearance,
           },
           physics: { enabled: true, isStatic: false },
-          movement: { type: 'none' },
+          movement: {},
         };
 
         engine.spawnFromTemplate(template, x, y, vx, vy, id);
@@ -291,7 +294,7 @@ export class SpawnerManager {
             tags: state.config.entityTags,
             appearance: { shape: 'rect', color: '#ff0055', ...state.config.entityAppearance },
             physics: { enabled: true, isStatic: false },
-            movement: { type: 'none' },
+            movement: {},
           },
           x, y, vx, vy, id
         );
@@ -420,6 +423,7 @@ export class LogicRuntime {
 
       if (shouldFire && this.evaluateConditions(rule.conditions, engine)) {
         this.executeActions(rule.actions, engine);
+        if (engine.state === 'gameover' || engine.state === 'win') return;
       }
     }
   }
@@ -507,13 +511,12 @@ export class LogicRuntime {
       }
 
       case 'variable_compare': {
-        if (!cond.variableName) return true;
-        const currentVal = this.variables.get(cond.variableName);
+        const currentVal = this.variables.get(cond.variableName || 'score');
         return compareValues(currentVal, cond.comparator || '==', cond.compareValue ?? 0);
       }
 
       case 'game_state_is':
-        return engine.state === cond.gameState;
+        return (engine.state === 'replaying' ? 'playing' : engine.state) === cond.gameState;
 
       case 'has_tag': {
         const target = this.resolveEntities(cond.entityRef, engine, subject, object)[0];
@@ -521,7 +524,7 @@ export class LogicRuntime {
       }
 
       case 'key_is_held':
-        return cond.key ? this.input.isInputActive(cond.key) : false;
+        return cond.key ? this.input.isKeyHeld(cond.key) : false;
 
       default:
         return true;
@@ -538,6 +541,7 @@ export class LogicRuntime {
   ): void {
     for (const act of actions) {
       this.executeSingleAction(act, engine, subject, object);
+      if (engine.state === 'gameover' || engine.state === 'win') break;
     }
   }
 
@@ -553,7 +557,7 @@ export class LogicRuntime {
       case 'move':
         for (const t of targets) {
           if (act.vx !== undefined) t.vx = act.vx;
-          if (act.vy !== undefined) t.vy = act.vy;
+          if (act.vy !== undefined && !(act.vy === 0 && act.vx && engine.schema.physics.gravity !== 0)) t.vy = act.vy;
         }
         break;
 

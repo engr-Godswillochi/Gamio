@@ -5,11 +5,11 @@
  * Powered by LogicRuntime for EVENT -> CONDITION -> ACTION visual game logic execution.
  * Reuses SeededRNG and InputRecorder for deterministic replay support.
  */
-import { GameModelSchema, Entity, migrateToV3 } from '../types/gameModel';
-import { ReplayPayload } from '../types/gameSchema';
-import { SeededRNG } from './seededRNG';
-import { InputRecorder, ReplayPlayer } from './inputRecorder';
-import { LogicRuntime, RuntimeEntity, LogicHostEngine } from './logicRuntime';
+import { GameModelSchema, Entity, migrateToV3 } from '../types/gameModel.js';
+import { ReplayPayload } from '../types/gameSchema.js';
+import { SeededRNG } from './seededRNG.js';
+import { InputRecorder, ReplayPlayer } from './inputRecorder.js';
+import { LogicRuntime, RuntimeEntity, LogicHostEngine } from './logicRuntime.js';
 
 export interface EngineCallbacks {
   onScoreChange?: (score: number) => void;
@@ -32,9 +32,13 @@ export class EntityEngine implements LogicHostEngine {
 
   private animFrameId: number | null = null;
   private lastTs = 0;
+  private accumulator = 0;
+  private headless = false;
+  private boundBlur = () => { this.pressedKeys.clear(); this.recorder.clearKeys(); };
   public state: 'ready' | 'playing' | 'gameover' | 'win' | 'replaying' = 'ready';
   private tickCount = 0;
   private spawnCount = 0;
+  private contacts = new Set<string>();
 
   public runtimeEntities: RuntimeEntity[] = [];
   public particles: Particle[] = [];
@@ -52,7 +56,8 @@ export class EntityEngine implements LogicHostEngine {
   private boundKeyDown: (e: KeyboardEvent) => void;
   private boundKeyUp: (e: KeyboardEvent) => void;
 
-  constructor(canvas: HTMLCanvasElement, rawSchema: GameModelSchema, seed?: string, callbacks: EngineCallbacks = {}) {
+  constructor(canvas: HTMLCanvasElement, rawSchema: GameModelSchema, seed?: string, callbacks: EngineCallbacks = {}, headless = false) {
+    this.headless = headless;
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('No 2D context');
@@ -67,21 +72,24 @@ export class EntityEngine implements LogicHostEngine {
     this.recorder = new InputRecorder(this.schema.id || this.schema.slug, rngSeed);
 
     this.logicRuntime = new LogicRuntime(this.schema.logic);
+    this.gameSpeed = this.schema.physics.gameSpeed || 1;
 
     this.boundKeyDown = (e) => {
+      if ((e.target as HTMLElement)?.closest?.('input, textarea, select, button, [contenteditable]')) return;
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
       this.pressedKeys.add(e.code);
       if (this.state === 'playing') this.recorder.handleKeyDown(e.code);
-      else if (this.state === 'ready' && (e.code === 'Space' || e.code === 'Enter')) this.startPlay();
-      else if ((this.state === 'gameover' || this.state === 'win') && (e.code === 'Space' || e.code === 'Enter')) { this.resetGame(); this.startPlay(); }
     };
     this.boundKeyUp = (e) => {
       this.pressedKeys.delete(e.code);
       if (this.state === 'playing') this.recorder.handleKeyUp(e.code);
     };
 
-    window.addEventListener('keydown', this.boundKeyDown);
-    window.addEventListener('keyup', this.boundKeyUp);
+    if (!headless) {
+      window.addEventListener('keydown', this.boundKeyDown);
+      window.addEventListener('keyup', this.boundKeyUp);
+      window.addEventListener('blur', this.boundBlur);
+    }
 
     this.buildRuntime();
     this.render();
@@ -90,6 +98,7 @@ export class EntityEngine implements LogicHostEngine {
   public detachEvents(): void {
     window.removeEventListener('keydown', this.boundKeyDown);
     window.removeEventListener('keyup', this.boundKeyUp);
+    window.removeEventListener('blur', this.boundBlur);
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
   }
 
@@ -109,6 +118,8 @@ export class EntityEngine implements LogicHostEngine {
     if (this.state === 'playing') return;
     this.state = 'playing';
     this.recorder.start();
+    this.pressedKeys.clear();
+    this.accumulator = 0;
     this.lastTs = performance.now();
     this.logicRuntime.triggerGameStart(this);
     this.loop(this.lastTs);
@@ -131,7 +142,11 @@ export class EntityEngine implements LogicHostEngine {
     this.replayPlayer = null;
     this.elapsedMs = 0;
     this.tickCount = 0;
+    this.accumulator = 0;
+    this.pressedKeys.clear();
+    this.shakeTime = 0;
     this.spawnCount = 0;
+    this.contacts.clear();
     this.cameraX = 0;
     this.cameraY = 0;
     this.scrollOffset = 0;
@@ -145,14 +160,38 @@ export class EntityEngine implements LogicHostEngine {
   }
 
   private loop(ts: number): void {
-    const dt = Math.min((ts - this.lastTs) / 1000, 0.05) * this.gameSpeed;
+    // Fixed simulation ticks make replay independent of refresh rate or dropped frames.
+    this.accumulator += Math.min((ts - this.lastTs) / 1000, 0.1);
     this.lastTs = ts;
     if (this.state === 'playing' || this.state === 'replaying') {
-      this.update(dt);
+      while (this.accumulator >= 1 / 60 && (this.state === 'playing' || this.state === 'replaying')) {
+        this.step();
+        this.accumulator -= 1 / 60;
+      }
       this.render();
-      this.tickCount++;
       this.animFrameId = requestAnimationFrame(t => this.loop(t));
     }
+  }
+
+  public setKey(key: string, down: boolean): void {
+    if (down) { this.pressedKeys.add(key); this.recorder.handleKeyDown(key); }
+    else { this.pressedKeys.delete(key); this.recorder.handleKeyUp(key); }
+  }
+
+  private step(): void {
+    this.update((1 / 60) * Math.max(0.25, Math.min(3, this.gameSpeed)));
+    this.tickCount++;
+    if (this.tickCount >= 7200 && (this.state === 'playing' || this.state === 'replaying')) this.endGame(true);
+  }
+
+  public simulate(payload: ReplayPayload): { score: number; ticks: number; terminal: boolean } {
+    this.resetGame(payload.rngSeed);
+    this.state = 'replaying';
+    this.replayPlayer = new ReplayPlayer(payload.inputLog);
+    this.logicRuntime.triggerGameStart(this);
+    const limit = payload.ticks || 0;
+    for (let i = 0; i < limit && this.state === 'replaying'; i++) this.step();
+    return { score: this.logicRuntime.variables.getNumber('score'), ticks: this.tickCount, terminal: this.state !== 'replaying' };
   }
 
   private getActiveKeys(): Set<string> {
@@ -194,7 +233,7 @@ export class EntityEngine implements LogicHostEngine {
         gravity: 1,
         ...template.physics,
       },
-      movement: { type: 'none', ...template.movement },
+      movement: { ...template.movement },
       appearance: {
         shape: 'rect',
         color: '#ff0055',
@@ -211,7 +250,7 @@ export class EntityEngine implements LogicHostEngine {
       spawnerId,
     };
 
-    this.runtimeEntities.push(newEnt);
+    if (this.runtimeEntities.length < 160) this.runtimeEntities.push(newEnt);
     return newEnt;
   }
 
@@ -224,12 +263,18 @@ export class EntityEngine implements LogicHostEngine {
   }
 
   private update(dt: number): void {
+    this.runtimeEntities = this.runtimeEntities.filter(e => e.alive);
     const keys = this.getActiveKeys();
     const { physics, scoring } = this.schema;
     this.elapsedMs += dt * 1000;
+    for (const ent of this.runtimeEntities) if (ent.type === 'player') {
+      ent.vx = 0;
+      if (physics.gravity === 0) ent.vy = 0;
+    }
 
     // 1. Evaluate logic engine (Rules, Inputs, Spawners, Timers)
     this.logicRuntime.update(dt, keys, this);
+    if (this.isTerminal()) return;
 
     // 2. Auto-scroll
     if (this.schema.scene.scrollType === 'auto_scroll' && this.schema.scene.scrollSpeed) {
@@ -275,9 +320,11 @@ export class EntityEngine implements LogicHostEngine {
 
     // 4. Collision detection + resolution + logic collision events
     const alive = this.runtimeEntities.filter(e => e.alive);
+    const contacts = new Set<string>();
     for (let i = 0; i < alive.length; i++) {
       for (let j = i + 1; j < alive.length; j++) {
         const a = alive[i], b = alive[j];
+        if (!a.alive || !b.alive) continue;
         if (a.physics.isStatic && b.physics.isStatic) continue;
         if (!this.aabb(a, b)) continue;
 
@@ -285,9 +332,14 @@ export class EntityEngine implements LogicHostEngine {
         this.resolveSolidCollision(a, b);
 
         // Logic engine collision trigger
-        this.logicRuntime.handleCollision(a, b, this);
+        const pair = [a.id, b.id].sort().join(':');
+        contacts.add(pair);
+        if (!this.contacts.has(pair)) this.logicRuntime.handleCollision(a, b, this);
+        if (this.isTerminal()) return;
       }
     }
+
+    this.contacts = contacts;
 
     // 5. Out of bounds check
     for (const ent of this.runtimeEntities) {
@@ -300,6 +352,7 @@ export class EntityEngine implements LogicHostEngine {
           this.endGame(false);
           return;
         }
+        if (ent.isSpawned) ent.alive = false;
       }
     }
 
@@ -331,6 +384,8 @@ export class EntityEngine implements LogicHostEngine {
     }
   }
 
+  private isTerminal(): boolean { return this.state === 'gameover' || this.state === 'win'; }
+
   private aabb(a: RuntimeEntity, b: RuntimeEntity): boolean {
     const at = a.transform, bt = b.transform;
     return at.x < bt.x + bt.width && at.x + at.width > bt.x &&
@@ -346,6 +401,7 @@ export class EntityEngine implements LogicHostEngine {
     if (!mover || !solid) return;
 
     const mt = mover.transform, st = solid.transform;
+    const incomingVy = mover.vy;
     const overlapX = Math.min(mt.x + mt.width - st.x, st.x + st.width - mt.x);
     const overlapY = Math.min(mt.y + mt.height - st.y, st.y + st.height - mt.y);
 
@@ -365,7 +421,7 @@ export class EntityEngine implements LogicHostEngine {
 
     const bounce = mover.physics.bounciness || 0;
     if (bounce > 0 && overlapY <= overlapX) {
-      mover.vy = -(mover.vy || 1) * bounce;
+      mover.vy = -incomingVy * bounce;
     }
   }
 
@@ -387,9 +443,12 @@ export class EntityEngine implements LogicHostEngine {
   }
 
   public endGame(isWin: boolean): void {
+    if (this.state !== 'playing' && this.state !== 'replaying') return;
     const wasLivePlay = this.state === 'playing';
     this.state = isWin ? 'win' : 'gameover';
     const replay = this.recorder.stop();
+    replay.ticks = Math.min(7200, this.tickCount + 1);
+    replay.durationMs = Math.round(replay.ticks * 1000 / 60);
     const finalScore = this.logicRuntime.variables.getNumber('score');
     this.render();
     // Replaying a previous run must not submit another replay or score.
@@ -425,6 +484,7 @@ export class EntityEngine implements LogicHostEngine {
   // ─── Rendering ──────────────────────────────────────────────
 
   private render(): void {
+    if (this.headless) return;
     const { width, height } = this.canvas;
     const scene = this.schema.scene;
     const theme = this.schema.theme;
@@ -450,8 +510,9 @@ export class EntityEngine implements LogicHostEngine {
     let shakeX = 0, shakeY = 0;
     if (this.shakeTime > 0) {
       this.shakeTime -= 0.016;
-      shakeX = (this.rng.nextFloat() - 0.5) * this.shakeMagnitude * 2;
-      shakeY = (this.rng.nextFloat() - 0.5) * this.shakeMagnitude * 2;
+      // Rendering must never consume the simulation's RNG.
+      shakeX = Math.sin(this.tickCount * 2.3) * this.shakeMagnitude;
+      shakeY = Math.cos(this.tickCount * 3.1) * this.shakeMagnitude;
     }
 
     this.ctx.translate(-this.cameraX + shakeX, -this.cameraY + shakeY);
@@ -484,14 +545,14 @@ export class EntityEngine implements LogicHostEngine {
     this.ctx.fillStyle = theme.hudColor || theme.accentColor;
     this.ctx.fillText(`SCORE: ${scoreVal}`, 16, 30);
     if (livesVal !== undefined && livesVal > 0) {
-      this.ctx.fillText(`LIVES: ${'❤️'.repeat(Math.max(0, livesVal))}`, 16, 54);
+      this.ctx.fillText(`LIVES: ${Math.max(0, livesVal)}`, 16, 54);
     }
     this.ctx.restore();
 
     // State overlays
-    if (this.state === 'ready') this.drawOverlay('PRESS SPACE TO START', `${this.schema.title}`);
-    else if (this.state === 'gameover') this.drawOverlay('GAME OVER', `SCORE: ${scoreVal} — Press Space to Retry`);
-    else if (this.state === 'win') this.drawOverlay('🏆 YOU WIN!', `SCORE: ${scoreVal} — Press Space to Play Again`);
+    if (this.state === 'ready') this.drawOverlay('READY WHEN YOU ARE', `${this.schema.title}`);
+    else if (this.state === 'gameover') this.drawOverlay('ONE MORE TRY?', `SCORE: ${scoreVal}`);
+    else if (this.state === 'win') this.drawOverlay('YOU DID IT!', `SCORE: ${scoreVal}`);
     else if (this.state === 'replaying') {
       this.ctx.save();
       this.ctx.font = 'bold 13px monospace';
@@ -506,6 +567,11 @@ export class EntityEngine implements LogicHostEngine {
     const a = ent.appearance;
     this.ctx.save();
     this.ctx.globalAlpha = a.opacity ?? 1;
+    if (t.rotation) {
+      this.ctx.translate(t.x + t.width / 2, t.y + t.height / 2);
+      this.ctx.rotate(t.rotation * Math.PI / 180);
+      this.ctx.translate(-t.x - t.width / 2, -t.y - t.height / 2);
+    }
 
     if (a.glow && a.glowColor) {
       this.ctx.shadowColor = a.glowColor;
@@ -528,6 +594,11 @@ export class EntityEngine implements LogicHostEngine {
         this.ctx.strokeStyle = a.strokeColor;
         this.ctx.lineWidth = a.strokeWidth || 1;
         this.ctx.strokeRect(t.x, t.y, t.width, t.height);
+      }
+      if (ent.type === 'player') {
+        this.ctx.shadowBlur = 0;
+        this.ctx.fillStyle = '#10101b';
+        this.ctx.fillRect(t.x + t.width * 0.58, t.y + t.height * 0.22, Math.max(2, t.width * 0.13), Math.max(2, t.height * 0.16));
       }
     }
 

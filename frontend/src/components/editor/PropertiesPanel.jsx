@@ -27,7 +27,7 @@ export default function PropertiesPanel({
           <PropertySection title="Physics">
             <SliderInput label="Gravity" value={schema.physics.gravity} min={0} max={3200} step={50}
               onChange={(v) => onUpdatePhysics({ gravity: v })} unit="px/s²" />
-            <SliderInput label="Game Speed" value={schema.physics.gameSpeed} min={0.2} max={3} step={0.1}
+            <SliderInput label="Game Speed" value={schema.physics.gameSpeed} min={0.3} max={3} step={0.1}
               onChange={(v) => onUpdatePhysics({ gameSpeed: v })} unit="x" />
           </PropertySection>
 
@@ -42,6 +42,9 @@ export default function PropertiesPanel({
                 { value: 'collect_all', label: 'Collect All' },
               ]}
               onChange={(v) => onUpdateScoring({ winCondition: v })} />
+            {['reach_score', 'survive_time'].includes(schema.scoring?.winCondition) && <NumberInput
+              label={schema.scoring.winCondition === 'survive_time' ? 'Target (milliseconds)' : 'Target score'}
+              value={schema.scoring.targetValue || 1000} onChange={v => onUpdateScoring({ targetValue: Math.max(1, v) })} />}
             <SliderInput label="Max Lives" value={schema.scoring?.maxLives || 3} min={1} max={10} step={1}
               onChange={(v) => onUpdateScoring({ maxLives: v })} />
           </PropertySection>
@@ -119,10 +122,6 @@ export default function PropertiesPanel({
               onChange={(v) => update({ physics: { enabled: v } })} />
             <ToggleInput label="Static (Immovable)" value={entity.physics.isStatic}
               onChange={(v) => update({ physics: { isStatic: v } })} />
-            <SliderInput label="Mass" value={entity.physics.mass || 1} min={0.1} max={10} step={0.1}
-              onChange={(v) => update({ physics: { mass: v } })} />
-            <SliderInput label="Friction" value={entity.physics.friction || 0} min={0} max={1} step={0.05}
-              onChange={(v) => update({ physics: { friction: v } })} />
             <SliderInput label="Bounciness" value={entity.physics.bounciness || 0} min={0} max={1} step={0.05}
               onChange={(v) => update({ physics: { bounciness: v } })} />
             <SliderInput label="Drag" value={entity.physics.drag || 0} min={0} max={1} step={0.05}
@@ -136,8 +135,6 @@ export default function PropertiesPanel({
               onChange={(v) => update({ movement: { speed: v } })} unit="px/s" />
             <SliderInput label="Jump Force" value={entity.movement.jumpForce || 0} min={0} max={1200} step={10}
               onChange={(v) => update({ movement: { jumpForce: v } })} />
-            <SliderInput label="Air Control" value={entity.movement.airControl || 0} min={0} max={1} step={0.05}
-              onChange={(v) => update({ movement: { airControl: v } })} />
             <SelectInput label="Pattern" value={entity.movement.pattern || 'none'}
               options={[
                 { value: 'none', label: 'None' },
@@ -247,7 +244,7 @@ function SliderInput({ label, value, min, max, step, onChange, unit = '' }) {
         <span className="text-purple-300">{label}</span>
         <span className="text-cyan-400 font-mono">{typeof value === 'number' ? (Number.isInteger(step) || step >= 1 ? value : value.toFixed(2)) : value}{unit}</span>
       </div>
-      <input type="range" min={min} max={max} step={step} value={value}
+      <input aria-label={label} type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full accent-cyan-400 bg-purple-950 rounded cursor-pointer h-1.5"
       />
@@ -259,7 +256,7 @@ function NumberInput({ label, value, onChange }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-[11px] font-semibold text-purple-300">{label}</span>
-      <input type="number" value={Math.round(value)} onChange={(e) => onChange(Number(e.target.value))}
+      <input aria-label={label} type="number" value={Math.round(value)} onChange={(e) => onChange(Number(e.target.value))}
         className="w-20 bg-purple-950/60 border border-purple-800/50 rounded-lg px-2 py-1 text-xs text-white text-right focus:border-cyan-400 focus:outline-none"
       />
     </div>
@@ -271,7 +268,7 @@ function ColorInput({ label, value, onChange }) {
     <div className="flex items-center justify-between gap-2">
       <span className="text-[11px] font-semibold text-purple-300">{label}</span>
       <div className="flex items-center gap-1.5">
-        <input type="color" value={value || '#000000'} onChange={(e) => onChange(e.target.value)}
+        <input aria-label={label} type="color" value={value || '#000000'} onChange={(e) => onChange(e.target.value)}
           className="w-7 h-7 rounded border border-purple-800/50 cursor-pointer bg-transparent"
         />
         <span className="text-[10px] font-mono text-purple-400">{value || 'none'}</span>
@@ -284,7 +281,7 @@ function ToggleInput({ label, value, onChange }) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-[11px] font-semibold text-purple-300">{label}</span>
-      <button onClick={() => onChange(!value)}
+      <button aria-label={label} aria-pressed={value} onClick={() => onChange(!value)}
         className={`w-9 h-5 rounded-full transition-all relative ${value ? 'bg-cyan-500' : 'bg-purple-800'}`}
       >
         <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-all ${value ? 'left-[18px]' : 'left-[3px]'}`} />
@@ -297,7 +294,7 @@ function SelectInput({ label, value, options, onChange }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-[11px] font-semibold text-purple-300 shrink-0">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}
+      <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}
         className="bg-purple-950/60 border border-purple-800/50 rounded-lg px-2 py-1 text-xs text-white focus:border-cyan-400 focus:outline-none cursor-pointer"
       >
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -310,7 +307,7 @@ function TextInput({ label, value, onChange }) {
   return (
     <div>
       <span className="text-[11px] font-semibold text-purple-300 block mb-1">{label}</span>
-      <input type="text" value={value} onChange={(e) => onChange(e.target.value)}
+      <input aria-label={label} type="text" value={value} onChange={(e) => onChange(e.target.value)}
         className="w-full bg-purple-950/60 border border-purple-800/50 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-cyan-400 focus:outline-none"
       />
     </div>

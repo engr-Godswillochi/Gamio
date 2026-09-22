@@ -43,9 +43,9 @@ export default function ToolboxPanel({ onAddEntity }) {
 
       {/* Assets Section (placeholder) */}
       <div className="px-4 py-3 border-t border-purple-900/30">
-        <h3 className="text-[11px] font-bold text-purple-400/60 uppercase tracking-wider">Assets</h3>
+        <h3 className="text-[11px] font-bold text-purple-400/60 uppercase tracking-wider">Make it yours</h3>
         <div className="mt-2 text-[10px] text-purple-500/50 text-center py-4 border border-dashed border-purple-800/30 rounded-lg">
-          Asset uploads coming soon
+          Select an object to change its color, size, and movement. Add rules with the Logic button.
         </div>
       </div>
     </div>

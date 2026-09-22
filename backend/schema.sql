@@ -73,3 +73,35 @@ CREATE TABLE IF NOT EXISTS clips (
   view_count    INTEGER NOT NULL DEFAULT 0,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Additive migration: preserve games, replay logs and clip separation (PRD §8).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT;
+ALTER TABLE games ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE games ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE replays ADD COLUMN IF NOT EXISTS schema_snapshot JSONB;
+ALTER TABLE replays ADD COLUMN IF NOT EXISTS ticks INTEGER;
+ALTER TABLE replays ADD COLUMN IF NOT EXISTS score INTEGER;
+ALTER TABLE replays ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE replays ADD COLUMN IF NOT EXISTS share_hash TEXT;
+ALTER TABLE scores ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
+CREATE UNIQUE INDEX IF NOT EXISTS scores_replay_once ON scores(replay_id) WHERE replay_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS clips_replay_once ON clips(replay_id);
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower ON users(lower(username));
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
+CREATE TABLE IF NOT EXISTS runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), game_id UUID NOT NULL REFERENCES games(id),
+  user_id UUID REFERENCES users(id), rng_seed TEXT NOT NULL, schema_snapshot JSONB NOT NULL,
+  revision INTEGER NOT NULL, token_hash TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed BOOLEAN NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS runs_created ON runs(created_at);
+CREATE TABLE IF NOT EXISTS reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), game_id UUID NOT NULL REFERENCES games(id),
+  reporter_id UUID NOT NULL REFERENCES users(id), reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open', created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(game_id, reporter_id)
+);

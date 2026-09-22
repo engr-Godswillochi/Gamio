@@ -11,6 +11,7 @@ export default function EditorCanvas({
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const dragRef = useRef(null); // { entityId, offsetX, offsetY }
+  const [view, setView] = useState({ x: 0, y: 0 });
 
   // ── Drag & Drop from Toolbox onto Canvas ──
   const handleDragOver = useCallback((e) => {
@@ -28,11 +29,11 @@ export default function EditorCanvas({
     const rect = canvasRef.current.getBoundingClientRect();
     const scaleX = canvasRef.current.width / rect.width;
     const scaleY = canvasRef.current.height / rect.height;
-    const dropX = Math.round((e.clientX - rect.left) * scaleX - 16);
-    const dropY = Math.round((e.clientY - rect.top) * scaleY - 16);
+    const dropX = Math.round((e.clientX - rect.left) * scaleX - 16 + view.x);
+    const dropY = Math.round((e.clientY - rect.top) * scaleY - 16 + view.y);
 
     onAddEntityAt(type, Math.max(0, dropX), Math.max(0, dropY));
-  }, [isPlayMode, onAddEntityAt]);
+  }, [isPlayMode, onAddEntityAt, view]);
 
   // ── Play Mode: mount EntityEngine ──
   useEffect(() => {
@@ -61,8 +62,8 @@ export default function EditorCanvas({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    renderEditScene(ctx, canvas, schema, selectedId);
-  }, [schema, selectedId, isPlayMode]);
+    renderEditScene(ctx, canvas, schema, selectedId, view);
+  }, [schema, selectedId, isPlayMode, view]);
 
   // ── Mouse handlers for edit mode ──
   const handleMouseDown = useCallback((e) => {
@@ -72,8 +73,8 @@ export default function EditorCanvas({
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const mx = (e.clientX - rect.left) * scaleX;
-    const my = (e.clientY - rect.top) * scaleY;
+    const mx = (e.clientX - rect.left) * scaleX + view.x;
+    const my = (e.clientY - rect.top) * scaleY + view.y;
 
     // Hit test entities in reverse order (topmost first)
     let hit = null;
@@ -94,7 +95,7 @@ export default function EditorCanvas({
     } else {
       onSelectEntity(null);
     }
-  }, [schema, isPlayMode, onSelectEntity]);
+  }, [schema, isPlayMode, onSelectEntity, view]);
 
   const handleMouseMove = useCallback((e) => {
     if (isPlayMode || !dragRef.current) return;
@@ -103,13 +104,13 @@ export default function EditorCanvas({
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const mx = (e.clientX - rect.left) * scaleX;
-    const my = (e.clientY - rect.top) * scaleY;
+    const mx = (e.clientX - rect.left) * scaleX + view.x;
+    const my = (e.clientY - rect.top) * scaleY + view.y;
 
     const newX = Math.round(mx - dragRef.current.offsetX);
     const newY = Math.round(my - dragRef.current.offsetY);
     onMoveEntity(dragRef.current.entityId, newX, newY);
-  }, [isPlayMode, onMoveEntity]);
+  }, [isPlayMode, onMoveEntity, view]);
 
   const handleMouseUp = useCallback(() => {
     if (dragRef.current) {
@@ -130,15 +131,22 @@ export default function EditorCanvas({
           onDeleteEntity(selectedId);
         }
       }
-      if (e.ctrlKey && e.key === 'z') e.preventDefault(); // handled by toolbar
-      if (e.ctrlKey && e.key === 'y') e.preventDefault();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [isPlayMode, selectedId, schema, onDeleteEntity]);
 
   return (
-    <div className="w-full h-full flex items-center justify-center bg-[#080412] p-3">
+    <div className="w-full h-full flex flex-col items-center justify-center bg-[#080412] p-3 gap-3">
+      {!isPlayMode && <div className="canvas-navigation">
+        <label>Objects<select aria-label="Select scene object" value={selectedId || ''} onChange={e => {
+          onSelectEntity(e.target.value || null);
+          const ent = schema.entities.find(item => item.id === e.target.value);
+          if (ent) setView({ x: Math.max(0, Math.min(schema.scene.width - 800, ent.transform.x - 350)), y: Math.max(0, Math.min(schema.scene.height - 450, ent.transform.y - 180)) });
+        }}><option value="">Scene settings</option>{schema.entities.map(ent => <option key={ent.id} value={ent.id}>{ent.name} · {Math.round(ent.transform.x)}, {Math.round(ent.transform.y)}</option>)}</select></label>
+        {schema.scene.width > 800 && <label>Pan across world<input aria-label="Pan across world" type="range" min="0" max={schema.scene.width - 800} value={view.x} onChange={e => setView(v => ({ ...v, x: Number(e.target.value) }))}/></label>}
+        {schema.scene.height > 450 && <label>Pan vertically<input aria-label="Pan vertically" type="range" min="0" max={schema.scene.height - 450} value={view.y} onChange={e => setView(v => ({ ...v, y: Number(e.target.value) }))}/></label>}
+      </div>}
       <div className="relative rounded-xl overflow-hidden border border-purple-800/50 shadow-2xl bg-black" style={{ maxWidth: 800, width: '100%' }}>
         {/* Mode indicator */}
         <div className="absolute top-2 left-3 z-10 flex items-center gap-2">
@@ -156,10 +164,10 @@ export default function EditorCanvas({
           width={800}
           height={450}
           className="w-full h-auto aspect-[16/9] block cursor-crosshair"
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); handleMouseDown(e); }}
+          onPointerMove={handleMouseMove}
+          onPointerUp={handleMouseUp}
+          onPointerCancel={handleMouseUp}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
         />
@@ -171,7 +179,7 @@ export default function EditorCanvas({
 /**
  * Renders the game scene statically for the editor (no physics simulation).
  */
-function renderEditScene(ctx, canvas, schema, selectedId) {
+function renderEditScene(ctx, canvas, schema, selectedId, view) {
   const { width, height } = canvas;
   const scene = schema.scene;
 
@@ -192,6 +200,8 @@ function renderEditScene(ctx, canvas, schema, selectedId) {
     }
   }
 
+  ctx.save();
+  ctx.translate(-view.x, -view.y);
   // Render entities
   for (const ent of schema.entities) {
     if (!ent.isVisible) continue;
@@ -200,6 +210,11 @@ function renderEditScene(ctx, canvas, schema, selectedId) {
 
     ctx.save();
     ctx.globalAlpha = a.opacity ?? 1;
+    if (t.rotation) {
+      ctx.translate(t.x + t.width / 2, t.y + t.height / 2);
+      ctx.rotate(t.rotation * Math.PI / 180);
+      ctx.translate(-t.x - t.width / 2, -t.y - t.height / 2);
+    }
 
     if (a.glow && a.glowColor) {
       ctx.shadowColor = a.glowColor;
@@ -262,5 +277,6 @@ function renderEditScene(ctx, canvas, schema, selectedId) {
   ctx.setLineDash([8, 4]);
   ctx.strokeRect(0, 0, scene.width, scene.height);
   ctx.setLineDash([]);
+  ctx.restore();
   ctx.restore();
 }

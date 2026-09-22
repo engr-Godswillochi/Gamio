@@ -17,6 +17,8 @@ export default function EditorToolbar({
         </button>
         <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-cyan-500 to-fuchsia-500 flex items-center justify-center font-bold text-sm shadow-lg shadow-cyan-500/20 shrink-0">G</div>
         <input
+          aria-label="Game title"
+          maxLength={80}
           type="text"
           value={schema.title}
           onChange={(e) => onTitleChange(e.target.value)}
@@ -72,12 +74,12 @@ export default function EditorToolbar({
               ⚡ Logic Engine ({(schema.logic?.rules || schema.rules || []).length})
             </button>
 
-            <button
+            {false && <button
               onClick={onOpenAI}
               className="px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all border border-cyan-500/50 bg-gradient-to-r from-purple-900/80 to-cyan-950/80 text-cyan-300 hover:from-purple-800 hover:to-cyan-900 shadow-md flex items-center gap-1.5 active:scale-95"
             >
               ✨ AI Assistant
-            </button>
+            </button>}
           </>
         )}
       </div>

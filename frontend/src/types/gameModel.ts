@@ -130,7 +130,7 @@ export interface Rule {
 // ─── Logic System v3 (EVENT → CONDITION → ACTION) ──────────────
 
 export type Comparator = '==' | '!=' | '>' | '<' | '>=' | '<=';
-export type GameState = 'ready' | 'playing' | 'paused' | 'gameover' | 'win';
+export type GameState = 'ready' | 'playing' | 'paused' | 'gameover' | 'win' | 'replaying';
 
 /** How a rule references an entity — by specific id, type, tag, or contextual role. */
 export interface EntityRef {
@@ -403,6 +403,7 @@ export const DEFAULT_CONTROLS: ControlsConfig = {
 // ─── The Game Schema (v2) ───────────────────────────────────────
 
 export interface GameModelSchema {
+  soundtrack?: 'neon' | 'arcade' | 'chill' | 'none';
   // Identity
   id: string;
   title: string;
@@ -849,7 +850,7 @@ export function createBlankGame(title = 'Untitled Game'): GameModelSchema {
     description: '',
     version: 3,
     creationPath: 'manual',
-    scene: { ...DEFAULT_SCENE },
+    scene: { ...DEFAULT_SCENE, bounds: { ...DEFAULT_SCENE.bounds } },
     entities: [player, ground],
     physics: { ...DEFAULT_PHYSICS },
     theme: { ...DEFAULT_THEME },
@@ -1040,21 +1041,13 @@ export function createRunnerTemplate(): GameModelSchema {
   const goal = createDefaultEntity('goal', 3900, 356);
   game.entities.push(goal);
 
-  // Spawner for dynamic obstacles in addition to static ones
-  game.logic.spawners = [
-    {
-      id: generateSpawnerId(),
-      name: 'Dynamic Hazard Spawner',
-      entityType: 'spike',
-      entityTags: ['hazard', 'spike'],
-      entityAppearance: { color: '#ff0055' },
-      interval: 2.5,
-      spawnPosition: { x: 850, y: 404 },
-      initialVelocity: { vx: -250, vy: 0 },
-      maxActive: 5,
-      autoStart: true,
-    },
-  ];
+  game.logic.rules = game.logic.rules.filter(r => !['Move Left', 'Move Right'].includes(r.name));
+  game.logic.rules.unshift({ id: generateLogicRuleId(), name: 'Run forward', enabled: true,
+    event: { type: 'every_frame' }, conditions: [],
+    actions: [{ type: 'move', entityRef: { mode: 'tag', tag: 'player' }, vx: 200 }] });
+  game.scene.scrollType = 'follow_player';
+  game.logic.rules.push({ id: generateLogicRuleId(), name: 'Distance bonus', enabled: true,
+    event: { type: 'every_interval', interval: 1 }, conditions: [], actions: [{ type: 'add_score', value: 5 }] });
 
   return game;
 }

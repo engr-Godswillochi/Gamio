@@ -472,10 +472,10 @@ function RuleCard({ rule, inputBindings, variables, spawners, tags, onUpdate, on
             ) : (
               <div className="space-y-1.5">
                 {rule.conditions.map((cond, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-purple-950/60 p-1.5 rounded border border-cyan-900/40">
+                  <div key={idx} className="flex flex-wrap items-center gap-2 bg-purple-950/60 p-1.5 rounded border border-cyan-900/40">
                     <select
                       value={cond.type}
-                      onChange={e => handleUpdateCondition(idx, { ...cond, type: e.target.value })}
+                      onChange={e => handleUpdateCondition(idx, { ...cond, type: e.target.value, variableName: cond.variableName || 'score', comparator: cond.comparator || '==', compareValue: cond.compareValue ?? 0, tag: cond.tag || 'player' })}
                       className="bg-purple-900/80 text-white rounded px-1.5 py-0.5 text-[11px]"
                     >
                       <option value="is_grounded">🦶 Is Grounded</option>
@@ -484,6 +484,12 @@ function RuleCard({ rule, inputBindings, variables, spawners, tags, onUpdate, on
                       <option value="variable_compare">📊 Variable Compare</option>
                       <option value="has_tag">🏷 Has Tag</option>
                     </select>
+                    {cond.type === 'variable_compare' ? <>
+                      <select aria-label="Condition variable" value={cond.variableName || 'score'} onChange={e=>handleUpdateCondition(idx,{...cond,variableName:e.target.value})}>{variables.map(v=><option key={v.name}>{v.name}</option>)}</select>
+                      <select aria-label="Comparison" value={cond.comparator || '=='} onChange={e=>handleUpdateCondition(idx,{...cond,comparator:e.target.value})}>{['==','!=','>','<','>=','<='].map(op=><option key={op}>{op}</option>)}</select>
+                      <input aria-label="Compare value" type="number" value={cond.compareValue ?? 0} onChange={e=>handleUpdateCondition(idx,{...cond,compareValue:Number(e.target.value)})}/>
+                    </> : <EntityRefSelect label="Target" value={cond.entityRef} tags={tags} onChange={entityRef=>handleUpdateCondition(idx,{...cond,entityRef})}/>}
+                    {cond.type==='has_tag'&&<select aria-label="Required tag" value={cond.tag||'player'} onChange={e=>handleUpdateCondition(idx,{...cond,tag:e.target.value})}>{tags.map(tag=><option key={tag}>{tag}</option>)}</select>}
 
                     <button
                       onClick={() => handleDeleteCondition(idx)}
@@ -520,7 +526,7 @@ function RuleCard({ rule, inputBindings, variables, spawners, tags, onUpdate, on
                     <div className="flex items-center justify-between gap-1.5">
                       <select
                         value={act.type}
-                        onChange={e => handleUpdateAction(idx, { ...act, type: e.target.value })}
+                        onChange={e => handleUpdateAction(idx, { ...act, type: e.target.value, variableName: act.variableName || 'score', value: act.value ?? 10, vx: act.vx ?? 300, vy: act.vy ?? 0 })}
                         className="bg-purple-900 text-white rounded px-2 py-1 text-xs font-bold border border-fuchsia-700/50"
                       >
                         <option value="move">🏃 Move Entity</option>
@@ -546,6 +552,10 @@ function RuleCard({ rule, inputBindings, variables, spawners, tags, onUpdate, on
                     </div>
 
                     {/* Action parameters */}
+                    {['add_variable','set_variable'].includes(act.type)&&<>
+                      <select aria-label="Action variable" value={act.variableName || 'score'} onChange={e=>handleUpdateAction(idx,{...act,variableName:e.target.value})}>{variables.map(v=><option key={v.name}>{v.name}</option>)}</select>
+                      <input aria-label="Variable value" type="number" value={act.value ?? 0} onChange={e=>handleUpdateAction(idx,{...act,value:Number(e.target.value)})}/>
+                    </>}
                     {(act.type === 'move' || act.type === 'jump' || act.type === 'destroy' || act.type === 'spawn_particles') && (
                       <EntityRefSelect
                         label="Target"
@@ -819,7 +829,7 @@ function VariablesTab({ variables, onUpdateVariables }) {
                     onChange={e =>
                       handleUpdate(idx, {
                         defaultValue:
-                          v.type === 'number' ? Number(e.target.value) : e.target.value,
+                          v.type === 'number' ? Number(e.target.value) : v.type === 'boolean' ? e.target.value === 'true' : e.target.value,
                       })
                     }
                     className="bg-purple-950 border border-purple-800 rounded px-2 py-1 text-xs text-cyan-300 font-mono w-full"

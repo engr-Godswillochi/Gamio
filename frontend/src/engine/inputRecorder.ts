@@ -1,4 +1,4 @@
-import { ReplayPayload, ReplayTickInput } from '../types/gameSchema';
+import { ReplayPayload, ReplayTickInput } from '../types/gameSchema.js';
 
 export class InputRecorder {
   private gameId: string;
@@ -31,6 +31,8 @@ export class InputRecorder {
     if (!this.isRecording) return;
     this.activeKeys.delete(key);
   }
+
+  public clearKeys(): void { this.activeKeys.clear(); }
 
   /**
    * Called on every game frame/tick update.
