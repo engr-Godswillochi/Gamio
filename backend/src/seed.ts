@@ -16,6 +16,9 @@ dodge.theme.accentColor='#c1fc67';dodge.theme.hudColor='#c1fc67';
 dodge.scene.backgroundColor='#101526';
 dodge.logic.rules.find(r=>r.name==='Collect Coin')!.actions.find(a=>a.type==='add_score')!.value=100;
 dodge.logic.rules.find(r=>r.name==='Hazard Damage')!.actions.push({type:'destroy',entityRef:{mode:'other'}});
+dodge.logic.rules.push({id:generateLogicRuleId(),name:'Lasers dissolve at the arena edge',enabled:true,
+ event:{type:'collision_start',subjectRef:{mode:'tag',tag:'hazard'},objectRef:{mode:'tag',tag:'solid'}},
+ conditions:[],actions:[{type:'destroy',entityRef:{mode:'self'}}]});
 dodge.logic.spawners=[{id:'falling-lasers',name:'Laser rain',entityType:'enemy',entityTags:['hazard'],entityAppearance:{shape:'rect',color:'#ff638f',glow:true,glowColor:'#ff638f'},interval:0.7,spawnPosition:{x:'random',xMin:30,xMax:740,y:18},initialVelocity:{vx:0,vy:185},maxActive:16,autoStart:true}];
 dodge.logic.rules.push({id:generateLogicRuleId(),name:'Survival bonus',enabled:true,event:{type:'every_interval',interval:1},conditions:[],actions:[{type:'add_score',value:5}]});
 dodge.scoring!.winCondition='survive_time';dodge.scoring!.targetValue=45000;
@@ -23,7 +26,13 @@ const platformer=createPlatformerTemplate();platformer.title='Cloudstep';platfor
 platformer.soundtrack='chill';platformer.theme.accentColor='#b1b4ff';platformer.scene.backgroundColor='#18182f';
 for(const [schema,slug,template] of [[runner,'neon-dash-runner','runner'],[dodge,'pulse-heist','dodge'],[platformer,'cloudstep','platformer']] as const){
  schema.id=randomUUID();schema.slug=slug;
- await query('INSERT INTO games(id,creator_id,title,slug,template,schema,is_published) VALUES($1,$2,$3,$4,$5,$6,true) ON CONFLICT(slug) DO NOTHING',[schema.id,account.id,schema.title,slug,template,schema]);
+ const existing=(await query('SELECT id,creator_id FROM games WHERE slug=$1',[slug])).rows[0];
+ if(existing && process.argv.includes('--refresh') && existing.creator_id===account.id){
+   schema.id=existing.id;
+   await query('UPDATE games SET schema=$1,title=$2,revision=revision+1,updated_at=now() WHERE id=$3',[schema,schema.title,existing.id]);
+ }else{
+   await query('INSERT INTO games(id,creator_id,title,slug,template,schema,is_published) VALUES($1,$2,$3,$4,$5,$6,true) ON CONFLICT(slug) DO NOTHING',[schema.id,account.id,schema.title,slug,template,schema]);
+ }
 }
-console.log('Seeded Neon Dash Runner, Pulse Heist, and Cloudstep (existing games preserved).');
+console.log(process.argv.includes('--refresh')?'Refreshed system-owned starter games. User-created games preserved.':'Seeded starter games. Existing games preserved.');
 await pool.end();

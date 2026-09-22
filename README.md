@@ -13,6 +13,8 @@ Requires Node.js 22+ and PostgreSQL. The current implementation uses React, Expr
 5. Start: `npm --prefix backend start`.
 6. Open [localhost:3001](http://localhost:3001). Sign up and save your recovery code.
 
+After a starter-game update, `npm --prefix backend run seed -- --refresh` refreshes only the system-owned starters and starts their new leaderboard revisions. User-created games and remixes are preserved.
+
 Database tables are created/migrated on startup. The server refuses to start if PostgreSQL is unavailable; there is no volatile fallback. The frontend build also works from removable-drive paths containing `?`, `#`, or `%`.
 
 For frontend development, `npm --prefix frontend run dev` proxies API calls to port 3001. On a path containing reserved URL characters, use the build-and-serve workflow above.

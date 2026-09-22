@@ -59,3 +59,19 @@ test('sustained contact only fires collision-start damage once',()=>{
  engine.simulate({rngSeed:'collision',inputLog:[],ticks:120});
  assert.equal(engine.logicRuntime.variables.getNumber('lives'),2);
 });
+test('destroying lasers at solid edges keeps their bounded spawner active',()=>{
+ const schema=createDodgeTemplate();
+ schema.entities=schema.entities.filter(e=>e.type!=='enemy'&&e.type!=='coin');
+ schema.logic.rules=[{id:'cleanup',name:'Laser cleanup',enabled:true,
+  event:{type:'collision_start',subjectRef:{mode:'tag',tag:'hazard'},objectRef:{mode:'tag',tag:'solid'}},
+  conditions:[],actions:[{type:'destroy',entityRef:{mode:'self'}}]}];
+ schema.logic.spawners=[{id:'lasers',name:'Lasers',entityType:'enemy',entityTags:['hazard'],
+  interval:0.7,spawnPosition:{x:100,y:18},initialVelocity:{vx:0,vy:185},maxActive:16,autoStart:true}];
+ schema.scoring.winCondition='survive_time';schema.scoring.targetValue=45000;
+ const engine=new EntityEngine(canvas,schema,'lasers',{},true);
+ let spawned=0;const spawn=engine.spawnFromTemplate.bind(engine);
+ engine.spawnFromTemplate=(...args)=>{spawned++;return spawn(...args);};
+ const result=engine.simulate({rngSeed:'lasers',inputLog:[],ticks:2700});
+ assert.equal(result.ticks,2700);assert.ok(spawned>=60,`Only ${spawned} lasers spawned`);
+ assert.ok(engine.runtimeEntities.filter(e=>e.alive&&e.tags.includes('hazard')).length<16);
+});

@@ -3,13 +3,14 @@
 ## Verified
 
 - Frontend production build and backend TypeScript build pass.
-- Seven engine regressions pass, including identical live/replay results at 30 Hz and 144 Hz, the 7,200-tick limit, and collision-start behavior.
+- Eight engine regressions pass, including identical live/replay results at 30 Hz and 144 Hz, the 7,200-tick limit, collision-start behavior, and continuous laser spawning through a 45-second run.
 - 48 local API checks pass against PostgreSQL, including private drafts, ownership, schema validation, CSRF, optimistic concurrency, rejected forged/duplicate scores, replay permissions, attribution, profile isolation, account recovery, and moderator hiding of games and clips.
 - Chromium end-to-end flow passes: signup, recovery-code display, create, save/reload, deliberately failed save and retry, edit an off-screen object, publish, play, verified score, replay, video export/upload/playback, score challenge, remix with new soundtrack, lineage, dashboard, profile, leaderboard deep links, and anonymous play.
 - Mobile home, player, and editor were checked at 390 px. No horizontal document overflow.
-- Pulse Heist was played with actual keyboard input and its soundtrack enabled. The server independently verified the resulting 225-point run.
+- Pulse Heist was played with actual keyboard input and its soundtrack enabled. After fixing laser accumulation at the arena floor, the server independently verified the resulting 130-point run.
 - Frontend dependency audit and backend production dependency audit report zero known vulnerabilities. Compatible Express/query-parser security updates are included in the lockfile.
 - Docker Compose configuration validates. Git whitespace checks pass.
+- GitHub Actions passed the clean-install build, engine, PostgreSQL API, and browser checks for the initial release commit `69cc393` ([run](https://github.com/engr-Godswillochi/Gamio/actions/runs/35694204348)).
 
 ## Deployment boundary
 
